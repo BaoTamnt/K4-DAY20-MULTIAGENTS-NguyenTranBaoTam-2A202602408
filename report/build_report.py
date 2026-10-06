@@ -49,7 +49,7 @@ def breakdown():
             rules = [k for r in rs for k in r["checks"] if k["name"].startswith("rule_")]
             rows.append([c, role, f"{sum(k['passed'] for k in tech)}/{len(tech)}",
                          f"{sum(k['passed'] for k in rules)}/{len(rules)}",
-                         f"{mean(r['tokens']['total'] for r in rs):,.0f}",
+                         f"{sum(r['tokens']['total'] for r in rs) // len(rs):,}",
                          f"{sum(r['skills_read'] > 0 for r in rs)}/{len(rs)}"])
     return table(["Điều kiện", "Tập", "Kỹ thuật", "Quy ước", "Token TB", "Lần đọc skill"], rows)
 
@@ -64,6 +64,7 @@ parts += ["## 1. Thông tin nhóm và cấu hình\n",
           f"- Python {config['python']}; Deep Agents {config['packages']['deepagents']}; LangChain {config['packages']['langchain']}; LangChain Core {config['packages']['langchain-core']}; LangChain OpenAI {config['packages']['langchain-openai']}.",
           "- Hệ điều hành Windows, shell Git sh. Backend có môi trường riêng, không kế thừa khóa API; hỗ trợ python3 qua python. Linux/macOS/WSL/Docker vẫn là môi trường chuẩn theo README.",
           f"- Số lần gọi tác vụ đã lưu: {len(runs) + len(dev) + len(diagnostics)} = {len(runs)} chính thức + {len(dev)} học thử + {len(diagnostics)} chẩn đoán. Curator ghi riêng ở `curator.txt`; probe kết nối dùng 11 token.",
+          f"- Token tác vụ đã lưu: {sum(r['tokens']['total'] for r in runs):,} chính thức + {sum(r['tokens']['total'] for r in dev):,} học thử + {sum(r['tokens']['total'] for r in diagnostics):,} chẩn đoán. Không bao gồm token hai lần curator (không đo riêng), không suy ra chi phí USD từ tổng này.",
           f"- Commit xuất phát: `{config['starting_commit']}`; commit freeze: `{freeze}`.",
           "- Mã bổ sung chỉ ở bốn module được giao; không thay đổi tests/tasks/scripts hoặc module có sẵn. Trên Windows, runner chuẩn hóa CRLF → LF chỉ trong bản sao Python của sandbox code để checker hash được byte gốc; trường workspace_lf_normalized ghi nhận việc này."]
 parts += ["## 2. Giả thuyết (chốt trước tag freeze)\n",
@@ -113,6 +114,8 @@ parts += ["## 6. Self-evolving: skill do curator sinh\n",
           "Curator chỉ dùng baseline learn không có error; có tên/detail check và cuối trace. Không dùng dữ liệu eval. Đầu ra giữ nguyên, không sửa tay. Chi tiết số lần sinh và quyết định giữ/xóa nằm trong `skill-review.md`.",
           table(["Skill", "Tổng quát", "Kiểm tra", "Dòng thân", "Description"], skillrows),
           "\nNhận xét về tính đúng và áp dụng từng quy tắc: xem `skill-review.md` và các trace skills-auto. Hợp lệ về cú pháp không chứng minh nội dung đúng. skills_read chỉ đếm skill khác nhau ở luồng chính, không đếm lại cùng skill."]
+if final:
+    parts.append("\n".join((OUT / "skill-review.md").read_text(encoding="utf-8").splitlines()[1:]))
 comparison = build_table(runs)
 (OUT / "table.md").write_text(comparison + "\n", encoding="utf-8")
 parts += ["## 7. Kết quả so sánh\n", comparison, "\n" + breakdown()]
@@ -145,7 +148,9 @@ if dev:
         noise.append([r["task"], f"{r['passed']}/{r['total']}", f"{later['passed']}/{later['total']}" if later else "Chưa chạy",
                       f"{later['score'] - r['score']:+.3f}" if later else "—", r["skills_read"], later["skills_read"] if later else "—"])
     parts += ["\nSo sánh cùng bộ skill trước/sau freeze:", table(["Task học", "Học thử", "Chính thức", "Δ điểm", "Skill đọc thử", "Skill đọc chính thức"], noise)]
-parts += ["\nPhân tích cơ chế từng check, quy ước mới và mức hỗ trợ H1–H3 nằm trong `analysis.md` (điền từ trace thật sau đánh giá). "
+if final:
+    parts.append("\n".join((OUT / "analysis.md").read_text(encoding="utf-8").splitlines()[1:]))
+parts += ["\nPhân tích cơ chế từng check, quy ước mới và mức hỗ trợ H1–H3 được trình bày ở trên và lưu riêng trong `analysis.md`. "
           "Curator lọc role trước khi đọc trace; validate_skill kiểm tra marker; hash và freeze kiểm tra bộ skill. "
           "Không mở check/run eval trước freeze. Chênh lệch học–eval có thể do khác độ khó và quy ước, chưa đủ chứng minh overfitting một mình."]
 parts += ["## 9. Hạn chế và tính hợp lệ\n",
@@ -156,14 +161,14 @@ parts += ["## 9. Hạn chế và tính hợp lệ\n",
           "5. Trace cắt từng message ở 1.500 ký tự và chỉ có luồng chính; thiếu nội bộ subagent và có thể thiếu đuôi script. Runner stream giữ trạng thái cuối khi lỗi nhưng không tái dựng mọi bước bên trong.",
           "6. Các lần chạy chẩn đoán trước thí nghiệm làm tăng ngân sách; đã giữ riêng và không dùng làm phản hồi curator. Thử lại sau lỗi hạ tầng không được hiểu là chọn điểm tốt nhất."]
 parts += ["## 10. Kết luận\n",
-          ("Đã hoàn tất ba điều kiện trên sáu task và lưu trace, token, điểm của từng lần chạy. "
-           "Kết quả chỉ hỗ trợ kết luận trong phạm vi bộ lab và một model. "
-           "Cần đọc cả điểm và chi phí, đồng thời phân biệt cải thiện quy ước với kỹ thuật. "
+          ("Đã hoàn tất ba điều kiện trên sáu task, với kiểm thử ngoại tuyến đạt và quy trình freeze hợp lệ. "
+           "Skills-auto có điểm eval cao nhất (0,597), baseline có điểm/token tốt nhất, còn subagents tốn thêm token nhưng giảm điểm trong lần chạy này. "
+           "Không có lần đọc thân skill và không có rule_ đạt, nên chưa chứng minh lợi ích đến từ áp dụng skill tự sinh. "
            "Bước tiếp theo là lặp eval nhiều lần để ước lượng nhiễu và thử thêm model."
            if final else "Harness đã chạy bằng API thật; còn phần đánh giá chính thức sau đóng băng. Không kết luận về điểm eval khi chưa có dữ liệu.")]
 parts += ["## Phụ lục\n",
           "- Lệnh và thứ tự: `RUN_NEXT.md`; cấu hình không chứa key: `config.json`.",
-          "- Kiểm thử: `offline-tests.txt`; tour: `tour.txt`; freeze: `freeze-check.txt`; thống kê: `check-breakdown.txt` khi đã chạy.",
+          "- Kiểm thử: `offline-tests.txt`; tour: `tour.txt`; freeze: `freeze-check.txt`; thống kê: `check-breakdown.txt`.",
           "- Chẩn đoán: `results/diagnostics` và `results/debug`; baseline/skills chính thức không dùng những run này.",
           "- [GPT-4.1 mini](https://developers.openai.com/api/docs/models/gpt-4.1-mini) được đối chiếu để chọn model hỗ trợ tool calling.",
           "- VLearn yêu cầu đăng nhập và công cụ trình duyệt không khởi động được; chưa đọc nội dung trang riêng đó. Thực hiện dựa trên README/GUIDE/RUBRIC có trong kho và hướng dẫn của người học rằng tự tạo key/chọn model."]
