@@ -1,0 +1,28 @@
+---
+name: parse-and-normalize-logs-for-error-reporting
+description: Use this skill to parse application log files and produce structured error reports. Extract only ERROR or CRITICAL entries, normalize timestamps to UTC ISO 8601 format, handle repeated messages, and aggregate counts by service with normalized service names.
+---
+- Read the log file line by line.
+- Identify log entries with level ERROR or CRITICAL (case insensitive).
+- For each such entry:
+  - Extract the timestamp and convert it to UTC timezone.
+  - Format the timestamp as `YYYY-MM-DDTHH:MM:SSZ`.
+  - Extract the service name; convert to lowercase and replace hyphens `-` with underscores `_`.
+  - Extract the log level in uppercase.
+  - Extract the message text after the service name and colon on the first line.
+  - If a traceback follows, extract the last line as the `exception` field; otherwise, set `exception` to null.
+  - Detect any following lines of the form `-- last message repeated N times --` and sum these to compute `repeat_count` (1 + sum of N).
+- Collect all such entries into a list.
+- Sort the list by service name, then by timestamp ascending.
+- Aggregate counts of total `repeat_count` per service.
+- Construct the output JSON object with:
+  - `"schema_version": 2`
+  - `"generated_by": "log-triage"`
+  - `"errors"`: the sorted list of error entries
+  - `"counts_by_service"`: the aggregated counts dictionary
+- Verify the number of entries matches expectations.
+- Validate that timestamps are correctly converted and formatted.
+- Confirm service names follow the naming rule.
+- Confirm sorting order is correct.
+- Confirm repeat counts are accurate.
+- Save the JSON output.

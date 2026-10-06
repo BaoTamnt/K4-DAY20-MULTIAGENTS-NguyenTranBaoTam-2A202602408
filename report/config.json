@@ -1,0 +1,20 @@
+{
+  "model": "openai:gpt-4.1-mini",
+  "temperature": 0.0,
+  "recursion_limit": 60,
+  "python": "3.11.9",
+  "platform": "Windows-10-10.0.26200-SP0",
+  "packages": {
+    "deepagents": "0.7.21",
+    "langchain": "1.4.3",
+    "langchain-core": "1.6.6",
+    "langchain-openai": "1.6.7"
+  },
+  "starting_commit": "d982034811dae6e0e42d0698131a9f33972a0bed",
+  "connection_probe": {
+    "reply": "OK",
+    "input_tokens": 10,
+    "output_tokens": 1,
+    "total_tokens": 11
+  }
+}

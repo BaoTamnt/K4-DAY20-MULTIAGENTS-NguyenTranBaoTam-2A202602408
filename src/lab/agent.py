@@ -4,12 +4,15 @@ Pseudo-code: guides/pseudocode/01_agent.md
 Kiểm tra:    pytest tests/test_02_agent.py
 """
 from pathlib import Path
+import os
+import shutil
+import sys
+import tempfile
 
-# TODO 1: import các thành phần cần dùng, ví dụ:
-#   from deepagents import create_deep_agent
-#   from deepagents.backends import LocalShellBackend
-#   from .model import make_model
-#   from .subagents import get_subagents
+from deepagents import create_deep_agent
+from deepagents.backends import LocalShellBackend
+from .model import make_model
+from .subagents import get_subagents
 
 # ---- CÓ SẴN, KHÔNG SỬA: system prompt dùng chung cho mọi sinh viên (để đường cơ sở so sánh được) ----
 PATHS_NOTE = (
@@ -47,7 +50,40 @@ def make_backend(sandbox: Path):
       - Tác tử chạy được lệnh shell và gọi được `python` (cần đặt PATH).
       - KHÔNG chuyển biến môi trường của bạn vào shell của tác tử (khóa API không được lộ).
     """
-    raise NotImplementedError("TODO 2: cài đặt make_backend (xem guides/pseudocode/01_agent.md)")
+    paths = [str(Path(sys.executable).parent), "/usr/local/bin", "/usr/bin", "/bin"]
+    shell = None
+    if os.name == "nt":
+        git = shutil.which("git")
+        if git:
+            posix_bin = Path(git).resolve().parent.parent / "usr" / "bin"
+            if posix_bin.is_dir():
+                paths.insert(1, str(posix_bin))
+                if (posix_bin / "sh.exe").is_file():
+                    shell = posix_bin / "sh.exe"
+    env = {
+        "PATH": os.pathsep.join(paths),
+        "HOME": str(sandbox),
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
+    backend_type = LocalShellBackend
+    if shell is not None:
+        class PosixShellBackend(LocalShellBackend):
+            """Run POSIX scripts with Git sh instead of Windows cmd syntax."""
+            def execute(self, command, *, timeout=None):
+                if not isinstance(command, str) or not command:
+                    return super().execute(command, timeout=timeout)
+                with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n",
+                                                 suffix=".sh", dir=sandbox, delete=False) as script:
+                    script.write('python3() { python "$@"; }\n')
+                    script.write(command)
+                    script_path = Path(script.name)
+                try:
+                    return super().execute(f'"{shell}" "{script_path}"', timeout=timeout)
+                finally:
+                    script_path.unlink(missing_ok=True)
+        backend_type = PosixShellBackend
+    return backend_type(root_dir=sandbox, virtual_mode=True,
+                             inherit_env=False, env=env, timeout=120)
 
 
 def build_agent(sandbox: Path, mode: str = "single", use_skills: bool = False, model=None):
@@ -64,4 +100,18 @@ def build_agent(sandbox: Path, mode: str = "single", use_skills: bool = False, m
     mode không hợp lệ -> ném ValueError.
     Trả về: đồ thị (graph) đã biên dịch, gọi bằng `.invoke({"messages": [...]})`.
     """
-    raise NotImplementedError("TODO 3: cài đặt build_agent (xem guides/pseudocode/01_agent.md)")
+    if mode not in {"single", "subagents"}:
+        raise ValueError(f"Unknown mode: {mode}")
+    kwargs = {}
+    prompt = BASE_PROMPT
+    if mode == "subagents":
+        kwargs["subagents"] = [
+            {**sub, "system_prompt": sub["system_prompt"] + " " + PATHS_NOTE}
+            for sub in get_subagents()
+        ]
+        prompt += SUBAGENTS_NOTE
+    if use_skills:
+        kwargs["skills"] = ["/skills/"]
+        prompt += SKILLS_NOTE
+    return create_deep_agent(model=model if model is not None else make_model(),
+                             system_prompt=prompt, backend=make_backend(sandbox), **kwargs)
